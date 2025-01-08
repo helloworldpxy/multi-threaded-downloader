@@ -1,0 +1,105 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from concurrent.futures import ThreadPoolExecutor
+import requests
+from io import BytesIO
+import os
+
+# 下载函数
+def download_chunk(url, start, end, file_stream):
+    """下载指定范围的文件块."""
+    headers = {'Range': f'bytes={start}-{end}'}
+    response = requests.get(url, headers=headers, stream=True)
+    response.raise_for_status()
+    for chunk in response.iter_content(chunk_size=1024):
+        file_stream.write(chunk)
+
+# 多线程下载函数
+def multi_thread_download(url, num_threads, save_path):
+    """使用多线程下载文件."""
+    try:
+        response = requests.head(url, allow_redirects=True)
+        content_length = int(response.headers.get('content-length', 0))
+        if content_length == 0:
+            raise ValueError("无法获取文件大小")
+
+        chunk_size = content_length // num_threads
+        with open(save_path, 'wb') as f:
+            threads = []
+            for i in range(num_threads):
+                start = i * chunk_size
+                end = start + chunk_size - 1 if i != num_threads - 1 else content_length - 1
+                stream = BytesIO()
+                thread = executor.submit(download_chunk, url, start, end, stream)
+                threads.append((thread, stream))
+
+            for thread, stream in threads:
+                thread.result()
+                f.write(stream.getvalue())
+                stream.close()
+
+        messagebox.showinfo("下载完成", f"{save_path} 下载完成!")
+    except Exception as e:
+        messagebox.showerror("下载错误", f"下载失败: {e}")
+
+# 主窗口
+class DownloaderApp:
+    """下载器主应用程序类."""
+    def __init__(self, root):
+        """初始化下载器界面并设置组件."""
+        self.root = root
+        self.root.title("多线程下载器")
+        self.root.geometry("400x200")
+
+        self.url_label = tk.Label(root, text="下载链接:")
+        self.url_label.pack(pady=5)
+
+        self.url_entry = tk.Entry(root, width=50)
+        self.url_entry.pack(pady=5)
+
+        self.threads_label = tk.Label(root, text="线程数:")
+        self.threads_label.pack(pady=5)
+
+        self.threads_entry = tk.Entry(root, width=10)
+        self.threads_entry.pack(pady=5)
+        self.threads_entry.insert(0, "4")
+
+        self.save_button = tk.Button(root, text="选择保存位置", command=self.select_save_path)
+        self.save_button.pack(pady=5)
+
+        self.save_path_var = tk.StringVar()
+        self.save_path_label = tk.Label(root, textvariable=self.save_path_var)
+        self.save_path_label.pack(pady=5)
+
+        self.download_button = tk.Button(root, text="开始下载", command=self.start_download)
+        self.download_button.pack(pady=20)
+
+        self.save_path = None
+
+    def select_save_path(self):
+        """选择文件保存路径."""
+        self.save_path = filedialog.asksaveasfilename(defaultextension=".bin", filetypes=[("All Files", "*.*")])
+        if self.save_path:
+            self.save_path_var.set(f"保存路径: {self.save_path}")
+
+    def start_download(self):
+        """启动文件下载过程."""
+        url = self.url_entry.get()
+        try:
+            num_threads = int(self.threads_entry.get())
+        except ValueError:
+            messagebox.showerror("输入错误", "线程数必须是数字")
+            return
+
+        if not url or not self.save_path or num_threads <= 0:
+            messagebox.showerror("输入错误", "请检查所有输入字段")
+            return
+
+        global executor
+        executor = ThreadPoolExecutor(max_workers=num_threads)
+        multi_thread_download(url, num_threads, self.save_path)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = DownloaderApp(root)
+    root.mainloop()
