@@ -1,12 +1,11 @@
 ```
 Written by HelloWorld05
-20250401
+20250404
 ```
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 import requests
-from io import BytesIO
 
 class DownloaderApp:
     """下载器主应用程序类."""
@@ -77,7 +76,7 @@ class DownloaderApp:
             if content_length == 0:
                 raise ValueError("无法获取文件大小")
 
-            if num_threads > content_length:
+            if num_threads > content_length // 1024:
                 num_threads = content_length // 1024 or 1
                 self.show_info("提示", f"线程数大于文件大小，已自动调整为 {num_threads} 个线程。")
 
@@ -87,14 +86,22 @@ class DownloaderApp:
                 for i in range(num_threads):
                     start = i * chunk_size
                     end = start + chunk_size - 1 if i != num_threads - 1 else content_length - 1
-                    stream = BytesIO()
+                    stream = open(save_path + f'.part{i}', 'wb')  # 直接写入文件，避免使用额外的内存流
                     thread = self.executor.submit(self.download_chunk, url, start, end, stream)
                     threads.append((thread, stream))
 
                 for thread, stream in threads:
                     thread.result()
-                    f.write(stream.getvalue())
                     stream.close()
+
+            # 合并所有部分文件
+            with open(save_path, 'wb') as f:
+                for i in range(num_threads):
+                    with open(save_path + f'.part{i}', 'rb') as part_file:
+                        f.write(part_file.read())
+                    part_file.close()
+                    import os
+                    os.remove(save_path + f'.part{i}')  # 删除部分文件
 
             self.show_info("下载完成", f"{save_path} 下载完成!")
         except Exception as e:
